@@ -123,5 +123,6 @@ dmypy.json
 .pyre/
 
 .idea/
-
+**/.idea
+*.DS_Store
 
