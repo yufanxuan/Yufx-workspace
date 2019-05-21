@@ -24,8 +24,8 @@
       <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/awesome-python3-webapp/www/orm.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="3555">
-              <caret line="237" column="81" selection-start-line="237" selection-start-column="81" selection-end-line="237" selection-end-column="81" />
+            <state relative-caret-position="317">
+              <caret line="263" column="40" selection-start-line="263" selection-start-column="40" selection-end-line="263" selection-end-column="40" />
               <folding>
                 <element signature="e#0#23#0" expanded="true" />
               </folding>
@@ -92,6 +92,7 @@
   </component>
   <component name="PropertiesComponent">
     <property name="ASKED_SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
+    <property name="SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
     <property name="WebServerToolWindowFactoryState" value="false" />
     <property name="last_opened_file_path" value="$PROJECT_DIR$" />
     <property name="nodejs_interpreter_path.stuck_in_default_project" value="undefined stuck path" />
@@ -172,12 +173,12 @@
       <option name="presentableId" value="Default" />
       <updated>1558358075655</updated>
       <workItem from="1558358078076" duration="185000" />
-      <workItem from="1558360624274" duration="2476000" />
+      <workItem from="1558360624274" duration="4205000" />
     </task>
     <servers />
   </component>
   <component name="TimeTrackingManager">
-    <option name="totallyTimeSpent" value="2661000" />
+    <option name="totallyTimeSpent" value="4390000" />
   </component>
   <component name="TodoView">
     <todo-panel id="selected-file">
@@ -239,8 +240,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/awesome-python3-webapp/www/orm.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="3555">
-          <caret line="237" column="81" selection-start-line="237" selection-start-column="81" selection-end-line="237" selection-end-column="81" />
+        <state relative-caret-position="317">
+          <caret line="263" column="40" selection-start-line="263" selection-start-column="40" selection-end-line="263" selection-end-column="40" />
           <folding>
             <element signature="e#0#23#0" expanded="true" />
           </folding>

@@ -2,10 +2,12 @@ import asyncio, logging
 import aiomysql
 
 
-def log (sql, arg=()):
+def log(sql, arg=()):
     logging.info('SQL:%s' % sql)
 
 
+# 创建一个全局的连接池，每个HTTP请求都从池子中获得数据库连接
+# 连接池由全局变量__pool存储，缺省状况下将编码设置为utf-8，自动提交事务
 async def create_pool(loop, **kw):
     logging.info('create database connection pool...')
     global __pool
@@ -23,6 +25,9 @@ async def create_pool(loop, **kw):
     )
 
 
+# 单独封装select，其他insert，update，delete一并封装，理由如下：
+# 使用Cursor对象执行insert、update、delete语句时候，执行结果由rowcount返回影响的行数，就可以拿到执行结果
+# 使用Cursor对象执行select语句时，通过fetchall()可以拿到结果集。结果集是一个list，每个元素都是一个tuple，对应一行记录
 async def select(sql, args, size=None):
     log(sql, args)
     global __pool
@@ -55,6 +60,7 @@ async def execute(sql, args, autocommit=True):
             return affected
 
 
+# 用于输出元类中创建sql_insert语句中的占位符
 def create_args_string(num):
     L = []
     for n in range(num):
@@ -62,6 +68,7 @@ def create_args_string(num):
     return ', '.join(L)
 
 
+# 定义Field类，负责保存(数据库)表的字段名和字段类型
 class Field(object):
 
     def __init__(self, name, column_type, primary_key, default):
@@ -71,16 +78,19 @@ class Field(object):
         self.default = default
 
     def __str__(self):
+        # 返回表名字 字段名 和字段类型
         return '<%s, %s:%s>' % (self.__class__.name, self.column_type, self.name)
 
 
+# 定义数据库中五个存储类型
 class StringField(Field):
 
     def __init__(self, name=None, primary_key=False, default=None, ddl='varchar(100)'):
         super().__init__(name, ddl, primary_key, default)
 
 
-class BoolenField(Field):
+# 布尔类型不可以作为主键
+class BooleanField(Field):
 
     def __init__(self, name=None, default=False):
         super.__init__(name, 'boolean', False, default)
@@ -104,42 +114,74 @@ class TextField(Field):
         super.__init__(name, 'text', False, default)
 
 
+# 定义model的元类
+# 所有的元类都继承自type
+# ModelMetaclass元类定义了所有Model基类（继承ModelMetaclass）的子类实现操作
+
+# -*-ModelMetaclass的工作主要是为一个数据库表映射成一个封装的类作准备：
+# 读取具体子类(user)的映射信息
+# 创造类的时候，排除对model类的修改
+# 在当前类中查找所有的类属行(attrs)，如果找到Field属性，就将其保存到__mappings__的dict中，同时从类属性中删除Field(放置实例属性遮住类的同名属性)
+# 将数据库表明保存到__table__中。
+
+# 完成上述工作就可以在model中定义各种数据库的操作方法
+# metaclass是类的模板，必须从’type‘类型派生
 class ModelMetaclass(type):
 
+    # __new__控制__init__的执行，所以在其执行之前，
+    # cls代表__init__的类，此参数在实例化时候有python解释器自动提供，例如下文的User和model
+    # bases: 代表继承父类的集合
+    # attrs: 类的方法集合
     def __new__(cls, name, bases, attrs):
+        # 排除model，是因为要排除对model类的修改
         if name == 'Model':
             return type.__new__(cls, name, bases, attrs)
+        # 获取table名称，如果存在表名，则返回表名，否则返回name
         tableName = attrs.get('__table__', None) or name
         logging.info('found model:%s (table:%s)' % (name, tableName))
-        mappings = dict()
-        fields = []
+        # 获取Field所有主键名和Field
+        mappings = dict()  # 保存映射关系
+        fields = []  # 保存除主键外的属性名字
         primaryKey = None
+        # k表示字段名
         for k, v in attrs.items():
             if isinstance(v, Field):
                 logging.info('  found mapping:%s ==> %s' % (k, v))
                 mappings[k] = v
                 if v.primary_key:
+                    # 找到主键，当第一次主键存在primarykey被赋值，如果后来再出现主键的话就会发生错误
                     if primaryKey:
-                        raise Exception('Duplicate primary key for field: %s' % k)
-                    primaryKey = k
+                        raise Exception('Duplicate primary key for field: %s' % k)  # 一个表只能有一个主键，当再出现一个主键的时候就报错
+                    primaryKey = k  # 该列设为列表的主键，主键仅能被设置一次
                 else:
-                    fields.append(k)
-        if not primaryKey:
+                    fields.append(k)  # 保存除主键外的属性
+        if not primaryKey:  # 如果主键不存在也将会报错，在这个表中没有找到主键，一个表有且仅有一个主键
             raise Exception('Primary key not found.')
+        # w下面位字段从属性中删除Field属性
         for k in mappings.keys():
-            attrs.pop(k)
-        escaped_fields = list(map(lambda f: '`%s`' % f, fields))
-        attrs['__mappings__'] = mappings
+            attrs.pop(k)  # 从类属性中删除Field属性否则，容易造成运行是发生错误（实例的属性会覆盖类的同名属性）
+        # 保存除主键外的属性为''列表的形式
+        # 除主键外的其他属性变成'id'，'name'这种形式
+        escaped_fields = list(map(lambda f: '`%s`' % f, fields))  # 转换为sql语法
+        # 创建共Model类使用的属性
+        attrs['__mappings__'] = mappings  # 保存属性和列的映射关系
         attrs['__table__'] = tableName
         attrs['__primary_key__'] = primaryKey
-        attrs['__fields__'] = fields
+        attrs['__fields__'] = fields  # 除主键外的属性名
         attrs['__select__'] = 'select `%s`, `%s` from `%s`' % (primaryKey, ', '.join(escaped_fields), tableName)
         attrs['__insert__'] = 'insert into `%s` (%s, `%s`) values (%s)' % (tableName, ', '.join(escaped_fields), primaryKey, create_args_string(len(escaped_fields) + 1))
-        attrs['__update__'] = 'update `%s` set %s where `%s`=?' % (tableName, ', '.join(map(lambda f: '`%s`=?' % (mappings.get(f).name or f), fields)), primaryKey)
+        attrs['__update__'] = 'update `%s` set %s where `%s`=?' % (tableName, ', '.join(map(lambda f: '`%s`=?' % (mappings.get(f).name or f), fields)), primaryKey)  # 查询列的名字，也看一下在Field定义上有没有定义名字，默认None
         attrs['__delete__'] = 'delete from `%s` where `%s`=?' % (tableName, primaryKey)
         return type.__new__(cls, name, bases, attrs)
 
 
+# 定义ORM所有映射的基类：Model
+# Model类的任意子类可以映射一个数据库表
+# Model类可以看做是对所有数据库表操作的基本定义的映射
+
+# 基于字典查询形式
+# Model从dict继承，拥有字典的所有功能，同时实现特殊方法__getattr__和__setattr__,能够实现属性操作
+# 实现数据库操作的所有方法，定义为class方法，所有继承自model都具有数据库操作方法
 class Model(dict, metaclass=ModelMetaclass):
 
     def __init__(self, **kw):
@@ -155,6 +197,11 @@ class Model(dict, metaclass=ModelMetaclass):
         self[key] = value
 
     def getValue(self, key):
+        # 默认内置函数实现，注意这里None的用处,是为了当user没有赋值数据时，返回None，调用于update
+        return getattr(self, key, None)
+
+    def getValueDefault(self, key):
+        # 第三个参数None，可以在没有返回数值时，返回None，调用于save
         value = getattr(self, key, None)
         if value is None:
             field = self.__mappings__[key]
@@ -166,6 +213,7 @@ class Model(dict, metaclass=ModelMetaclass):
 
 
 @classmethod
+# 当前类方法有cls传入，从而可以用cls做一些相关处理，并且有子类继承时候，调用该类方法
 async def findAll(cls, where=None, args=None, **kw):
     ' find objects by where clause. '
     sql = [cls.__select__]
@@ -189,8 +237,9 @@ async def findAll(cls, where=None, args=None, **kw):
             args.extend(limit)
         else:
             raise ValueError('Invaild limit value:%s' % str(limit))
+    # 返回的rs是一个元素是tuple的list
     rs = await select(' '.join(sql), args)
-    return [cls(**r) for r in rs]
+    return [cls(**r) for r in rs]  # 每条记录对应的类实例，**r是关键字参数，构成了一个cls类的列表
 
 
 @classmethod
@@ -212,6 +261,7 @@ async def find(cls, pk):
     rs = await select('%s where `%s`=?' % (cls.__select__, cls.__primary_key__), [pk], 1)
     if len(rs) == 0:
         return None
+    # 返回一条记录，以dict的形式返回，因为cls的夫类继承了dict类
     return cls(**rs[0])
 
 
