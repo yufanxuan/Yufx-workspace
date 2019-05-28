@@ -1,33 +1,25 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-__author__ = 'David Yang'
-
 import logging; logging.basicConfig(level=logging.INFO)
 import asyncio, os, json, time
 from datetime import datetime
 from aiohttp import web
 from jinja2 import Environment, FileSystemLoader
 
-## config 配置代码在后面会创建添加, 可先从github下载到www下,以防报错
 from config import configs
-
 import orm
 from coroweb import add_routes, add_static
-
-## handlers 是url处理模块在后面会创建编写, 可先从github下载到www下,以防报错
 from handlers import cookie2user, COOKIE_NAME
 
-## 初始化jinja2的函数
+
+# 初始化jinja2函数
 def init_jinja2(app, **kw):
     logging.info('init jinja2...')
     options = dict(
-        autoescape = kw.get('autoescape', True),
-        block_start_string = kw.get('block_start_string', '{%'),
-        block_end_string = kw.get('block_end_string', '%}'),
-        variable_start_string = kw.get('variable_start_string', '{{'),
-        variable_end_string = kw.get('variable_end_string', '}}'),
-        auto_reload = kw.get('auto_reload', True)
+        autoescape=kw.get('autoescape', True),
+        block_start_string=kw.get('block_start_string', '{%'),
+        block_end_string=kw.get('block_end_string', '%}'),
+        variable_start_string=kw.get('variable_start_string', '{{'),
+        variable_end_string=kw.get('variable_end_string', '}}'),
+        auto_reload=kw.get('auto_reload', True)
     )
     path = kw.get('path', None)
     if path is None:
@@ -40,15 +32,17 @@ def init_jinja2(app, **kw):
             env.filters[name] = f
     app['__templating__'] = env
 
-## 以下是middleware,可以把通用的功能从每个URL处理函数中拿出来集中放到一个地方
-## URL处理日志工厂
+
+# 以下是middleware，可以把通用的功能从每个URL处理函数中拿出来集中放到一个地方
+# URL处理日志工厂
 async def logger_factory(app, handler):
     async def logger(request):
         logging.info('Request: %s %s' % (request.method, request.path))
         return (await handler(request))
     return logger
 
-## 认证处理工厂--把当前用户绑定到request上，并对URL/manage/进行拦截，检查当前用户是否是管理员身份
+
+# 认证处理工厂 -- 把当前用户绑定到request上，并对URL/manage/进行拦截，检查当前用户是否是管理员身份
 async def auth_factory(app, handler):
     async def auth(request):
         logging.info('check user: %s %s' % (request.method, request.path))
@@ -64,20 +58,19 @@ async def auth_factory(app, handler):
         return (await handler(request))
     return auth
 
-## 数据处理工厂
+
+# 数据处理工厂
 async def data_factory(app, handler):
-    async def parse_data(request):
+    async def parse_date(request):
         if request.method == 'POST':
-            if request.content_type.startswith('application/json'):
-                request.__data__ = await request.json()
-                logging.info('request json: %s' % str(request.__data__))
-            elif request.content_type.startswith('application/x-www-form-urlencoded'):
+            if request.content_type.startswith('application/x-www-form-urlencoded'):
                 request.__data__ = await request.post()
                 logging.info('request form: %s' % str(request.__data__))
         return (await handler(request))
-    return parse_data
+    return parse_date
 
-## 响应返回处理工厂
+
+# 响应返回处理工厂
 async def response_factory(app, handler):
     async def response(request):
         logging.info('Response handler...')
@@ -89,7 +82,7 @@ async def response_factory(app, handler):
             resp.content_type = 'application/octet-stream'
             return resp
         if isinstance(r, str):
-            if r.startswith('redirect:'):
+            if r.startswith('redirect'):
                 return web.HTTPFound(r[9:])
             resp = web.Response(body=r.encode('utf-8'))
             resp.content_type = 'text/html;charset=utf-8'
@@ -105,11 +98,11 @@ async def response_factory(app, handler):
                 resp = web.Response(body=app['__templating__'].get_template(template).render(**r).encode('utf-8'))
                 resp.content_type = 'text/html;charset=utf-8'
                 return resp
-        if isinstance(r, int) and r >= 100 and r < 600:
+        if isinstance(r, int) and 100 <= r < 600:
             return web.Response(r)
         if isinstance(r, tuple) and len(r) == 2:
             t, m = r
-            if isinstance(t, int) and t >= 100 and t < 600:
+            if isinstance(t, int) and 100 <= t < 600:
                 return web.Response(t, str(m))
         # default:
         resp = web.Response(body=str(r).encode('utf-8'))
@@ -117,7 +110,8 @@ async def response_factory(app, handler):
         return resp
     return response
 
-## 时间转换
+
+# 时间转换
 def datetime_filter(t):
     delta = int(time.time() - t)
     if delta < 60:
@@ -131,18 +125,39 @@ def datetime_filter(t):
     dt = datetime.fromtimestamp(t)
     return u'%s年%s月%s日' % (dt.year, dt.month, dt.day)
 
+
 async def init(loop):
     await orm.create_pool(loop=loop, **configs.db)
     app = web.Application(loop=loop, middlewares=[
-        logger_factory, auth_factory, response_factory
+        logger_factory, response_factory, auth_factory
     ])
     init_jinja2(app, filters=dict(datetime=datetime_filter))
     add_routes(app, 'handlers')
     add_static(app)
-    srv = await loop.create_server(app._make_handler(), '127.0.0.1', 9008)
-    logging.info('server started at http://127.0.0.1:9008...')
+    srv = await loop.create_server(app._make_handler(), '127.0.0.1', 9002)
+    logging.info('server started at http://127.0.0.1:9002...')
     return srv
+
+
+# def index(request):
+#     return web.Response(body=b'<h1>Awesome!</h1>', content_type='text/html')
+#
+#
+# @asyncio.coroutine
+# def init():
+#     app = web.Application()
+#     app = web_runner.AppRunner(app=app).app()
+#     app.router.add_route('GET', '/', index)
+#     srv = yield from loop.create_server(app._make_handler(), '127.0.0.1', 9000)
+#     logging.info('server started at http://127.0.0.1:9000...')
+#     return srv
+
 
 loop = asyncio.get_event_loop()
 loop.run_until_complete(init(loop))
 loop.run_forever()
+
+
+
+
+
